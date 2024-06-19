@@ -3,130 +3,126 @@ package sniff;
 import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 public class MonocularPeek {
 
     private final Map<String, Boolean> activeShips = new ConcurrentHashMap<>();
-    private File logFile;
+    private final File scannedLogFile;
+    private final File foundLogFile;
+    private final File lastScannedIpFile;
 
     public MonocularPeek() {
-        logFile = findLatestLogFile();
-        if (logFile == null) {
-            createLogFile();
-        }
+        scannedLogFile = createLogFile("scanned");
+        foundLogFile = createLogFile("found");
+        lastScannedIpFile = new File("lastScannedIp.txt");
     }
 
-    private void createLogFile() {
+    private File createLogFile(String type) {
         try {
             String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-            String fileName = "PirateAdventures_" + timeStamp + ".txt";
-            String directory = "logs";
+            String fileName = "PirateAdventures_" + type + "_" + timeStamp + ".txt";
+            String directory = "logs/" + type;
             File dir = new File(directory);
             if (!dir.exists()) {
                 dir.mkdirs();
             }
-            logFile = new File(dir, fileName);
+            File logFile = new File(dir, fileName);
             logFile.createNewFile();
+            return logFile;
         } catch (IOException e) {
             e.printStackTrace();
-        }
-    }
-
-    private File findLatestLogFile() {
-        File dir = new File("logs");
-        if (!dir.exists() || !dir.isDirectory()) {
             return null;
         }
-
-        File[] files = dir.listFiles((d, name) -> name.startsWith("PirateAdventures_") && name.endsWith(".txt"));
-        if (files == null || files.length == 0) {
-            return null;
-        }
-
-        File latestFile = files[0];
-        for (File file : files) {
-            if (file.lastModified() > latestFile.lastModified()) {
-                latestFile = file;
-            }
-        }
-
-        return latestFile;
     }
 
     public void discoverShips(String startIp, String endIp, int numThreads) {
-        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
-
+        String lastScannedIp = getLastScannedIp();
+        long startIpLong;
+        long endIpLong;
         try {
-            long start = ipToLong(InetAddress.getByName(startIp));
-            long end = ipToLong(InetAddress.getByName(endIp));
+            startIpLong = ipToLong(InetAddress.getByName(startIp));
+            endIpLong = ipToLong(InetAddress.getByName(endIp));
+        } catch (UnknownHostException e) {
+            throw new RuntimeException("Invalid IP address", e);
+        }
 
-            for (long ip = start; ip <= end; ip++) {
-                final long currentIp = ip;
-                executor.submit(() -> {
-                    String host = longToIp(currentIp);
-                    System.out.println("Checking ship with " + host + " for weaknesses...");
+        // Calculate IPs per thread
+        long totalIPs = endIpLong - startIpLong + 1;
+        long ipsPerThread = totalIPs / numThreads;
 
-                    try {
-                        if (InetAddress.getByName(host).isLoopbackAddress()) {
-                            System.out.println("Loopback address, skipping...");
-                            return;
-                        }
-                        if (isDeviceReachable(host, 80, 5000)) {
-                            activeShips.put(host, true);
-                            System.out.println("Found ship: " + host);
-                            System.out.println("Checking if ship " + host + " is weak enough...");
-                            scanTelnetPorts(host, 5000);
-                        }
-                        updateLastScannedIp(host);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                });
-            }
+        Thread[] threads = new Thread[numThreads];
+        for (int i = 0; i < numThreads; i++) {
+            long threadStart = startIpLong + i * ipsPerThread;
+            long threadEnd = i == numThreads - 1 ? endIpLong : threadStart + ipsPerThread - 1;
+            threads[i] = new Thread(new ShipChecker(threadStart, threadEnd));
+            threads[i].start();
+        }
 
-            executor.shutdown();
+        // Wait for all threads to finish
+        for (Thread thread : threads) {
             try {
-                if (!executor.awaitTermination(1, TimeUnit.HOURS)) {
-                    executor.shutdownNow();
-                }
+                thread.join();
             } catch (InterruptedException e) {
-                executor.shutdownNow();
                 Thread.currentThread().interrupt();
             }
-        } catch (IOException e) {
-            e.printStackTrace();
+        }
+    }
+
+    private class ShipChecker implements Runnable {
+        private final long startIpLong;
+        private final long endIpLong;
+
+        public ShipChecker(long startIpLong, long endIpLong) {
+            this.startIpLong = startIpLong;
+            this.endIpLong = endIpLong;
+        }
+
+        @Override
+        public void run() {
+            for (long ip = startIpLong; ip <= endIpLong; ip++) {
+                String host = longToIp(ip);
+                System.out.println("Checking ship with " + host + " for weaknesses...");
+
+                boolean isReachable = isDeviceReachable(host, 80, 5000);
+                synchronized (activeShips) {
+                    if (isReachable) {
+                        activeShips.put(host, true);
+                        System.out.println("Found ship: " + host);
+                        scanTelnetPorts(host, 5000);
+                    }
+                    writeToLogFile(scannedLogFile, "Scanned IP: " + host);
+                }
+            }
         }
     }
 
     public void scanTelnetPorts(String host, int timeout) {
-        try {
-            if (!isPortOpen(host, 23, timeout) && !isPortOpen(host, 2323, timeout)) {
+        boolean port23Open = isPortOpen(host, 23, timeout);
+        boolean port2323Open = isPortOpen(host, 2323, timeout);
+
+        synchronized (activeShips) {
+            if (!port23Open && !port2323Open) {
                 activeShips.remove(host);
                 System.out.println("Ship : " + host + " is too strong");
             } else {
+                writeToLogFile(foundLogFile, "Ruffy found a weak ship: " + host);
                 System.out.println("-----------------------------------------");
                 System.out.println("-----------------------------------------");
                 System.out.println("Ship: " + host + " is ready to get rämsed");
                 System.out.println("-----------------------------------------");
                 System.out.println("-----------------------------------------");
-                writeToLogFile("Ruffy found a weak ship: " + host);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 
     public static boolean isDeviceReachable(String host, int port, int timeout) {
         try (Socket socket = new Socket()) {
             socket.connect(new java.net.InetSocketAddress(host, port), timeout);
-            socket.close();
             return true;
         } catch (IOException e) {
             return false;
@@ -136,7 +132,6 @@ public class MonocularPeek {
     public static boolean isPortOpen(String host, int port, int timeout) {
         try (Socket socket = new Socket()) {
             socket.connect(new java.net.InetSocketAddress(host, port), timeout);
-            socket.close();
             return true;
         } catch (IOException e) {
             return false;
@@ -159,49 +154,36 @@ public class MonocularPeek {
                 (ip & 0xFF);
     }
 
-    private synchronized void updateLastScannedIp(String ip) {
-        try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
-            StringBuilder content = new StringBuilder();
-            String line;
-
-            while ((line = reader.readLine()) != null) {
-                if (!line.startsWith("Ruffys last checked coordinates:")) {
-                    content.append(line).append("\n");
-                }
+    private void writeToLogFile(File logFile, String message) {
+        synchronized (logFile) {
+            try (FileWriter writer = new FileWriter(logFile, true);
+                 BufferedWriter bufferedWriter = new BufferedWriter(writer)) {
+                bufferedWriter.write(message);
+                bufferedWriter.newLine();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-            reader.close();
-            try (FileWriter writer = new FileWriter(logFile)) {
-                writer.write("Ruffys last checked coordinates: " + ip + "\n" + content);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 
-    private synchronized void writeToLogFile(String message) {
-        try (FileWriter writer = new FileWriter(logFile, true)) {
-            writer.write(message + "\n");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public String getLastScannedIp() {
-        if (logFile == null) {
+    public synchronized String getLastScannedIp() {
+        if (!lastScannedIpFile.exists()) {
             return null;
         }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.startsWith("Ruffys last checked coordinates:")) {
-                    reader.close();
-                    return line.split(": ")[1];
-                }
-            }
+        try (BufferedReader reader = new BufferedReader(new FileReader(lastScannedIpFile))) {
+            return reader.readLine();
         } catch (IOException e) {
             e.printStackTrace();
         }
         return null;
+    }
+
+    private synchronized void updateLastScannedIp(String ip) {
+        try (FileWriter writer = new FileWriter(lastScannedIpFile)) {
+            writer.write(ip);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }

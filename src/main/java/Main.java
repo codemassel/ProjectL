@@ -16,10 +16,11 @@ public class Main {
         System.out.println("----------Started to sail hihihihihihihi---------------");
         System.out.println("-------------------------------------------------------");
 
-        MonocularPeek ruffy = new MonocularPeek();
-        String lastScannedIp = ruffy.getLastScannedIp();
-        String startIp = (lastScannedIp != null) ? lastScannedIp : "103.107.180.216";
+        MonocularPeek monocularPeek = new MonocularPeek();
+        String startIp = "103.107.181.36";
+        String endIp = "103.255.181.45";
+        int numThreads = 2000;
 
-        ruffy.discoverShips(startIp, "172.255.255.255", 8);
+        monocularPeek.discoverShips(startIp, endIp, numThreads);
     }
 }
