@@ -1,8 +1,14 @@
 import sniff.MonocularPeek;
 
+import java.net.Inet4Address;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
+
 public class Main {
     // One Piece Episode 1
-    public static void main(String[] args) {
+    public static void main(String[] args) throws UnknownHostException {
+
         System.out.println("                   |    |    |");
         System.out.println("                  )_)  )_)  )_)");
         System.out.println("                 )___))___))___)");
@@ -16,10 +22,6 @@ public class Main {
         System.out.println("----------Started to sail hihihihihihihi---------------");
         System.out.println("-------------------------------------------------------");
 
-        MonocularPeek ruffy = new MonocularPeek();
-        String lastScannedIp = ruffy.getLastScannedIp();
-        String startIp = (lastScannedIp != null) ? lastScannedIp : "103.107.180.216";
-
-        ruffy.discoverShips(startIp, "172.255.255.255", 8);
+        MonocularPeek ruffy = new MonocularPeek("172.255.255.255", 2);
     }
 }
