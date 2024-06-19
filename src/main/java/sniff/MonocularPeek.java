@@ -51,7 +51,6 @@ public class MonocularPeek {
             throw new RuntimeException("Invalid IP address", e);
         }
 
-        // Calculate IPs per thread
         long totalIPs = endIpLong - startIpLong + 1;
         long ipsPerThread = totalIPs / numThreads;
 
@@ -63,7 +62,6 @@ public class MonocularPeek {
             threads[i].start();
         }
 
-        // Wait for all threads to finish
         for (Thread thread : threads) {
             try {
                 thread.join();
