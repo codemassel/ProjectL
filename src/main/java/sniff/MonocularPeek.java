@@ -14,9 +14,6 @@ import java.util.concurrent.TimeUnit;
 public class MonocularPeek {
 
     private final Map<String, Boolean> activeShips = new ConcurrentHashMap<>();
-    private final Map<String, Boolean> telnetShips = new ConcurrentHashMap<>();
-    private final Map<String, Boolean> weakShips = new ConcurrentHashMap<>();
-    private final Object logFileLock = new Object(); // Lock object for synchronizing log file operations
     private File logFile;
 
     public MonocularPeek() {
@@ -63,8 +60,7 @@ public class MonocularPeek {
         return latestFile;
     }
 
-    public void discoverShips(String startIp, String endIp) {
-        int numThreads = 16;  // Anzahl der Threads (kann an die verfügbare Hardware angepasst werden)
+    public void discoverShips(String startIp, String endIp, int numThreads) {
         ExecutorService executor = Executors.newFixedThreadPool(numThreads);
 
         try {
@@ -82,11 +78,11 @@ public class MonocularPeek {
                             System.out.println("Loopback address, skipping...");
                             return;
                         }
-                        if (isDeviceReachable(host, 80, 5000)) { // Port 80 for TCP, timeout of 5 seconds
+                        if (isDeviceReachable(host, 80, 5000)) {
                             activeShips.put(host, true);
                             System.out.println("Found ship: " + host);
                             System.out.println("Checking if ship " + host + " is weak enough...");
-                            scanTelnetPorts(host, 5000); // Timeout of 5 seconds for Telnet port scan
+                            scanTelnetPorts(host, 5000);
                         }
                         updateLastScannedIp(host);
                     } catch (IOException e) {
@@ -96,10 +92,15 @@ public class MonocularPeek {
             }
 
             executor.shutdown();
-            if (!executor.awaitTermination(1, TimeUnit.HOURS)) {
+            try {
+                if (!executor.awaitTermination(1, TimeUnit.HOURS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
                 executor.shutdownNow();
+                Thread.currentThread().interrupt();
             }
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
@@ -110,15 +111,11 @@ public class MonocularPeek {
                 activeShips.remove(host);
                 System.out.println("Ship : " + host + " is too strong");
             } else {
-                telnetShips.put(host, true);
                 System.out.println("-----------------------------------------");
                 System.out.println("-----------------------------------------");
                 System.out.println("Ship: " + host + " is ready to get rämsed");
                 System.out.println("-----------------------------------------");
                 System.out.println("-----------------------------------------");
-                weakShips.put(host, true);
-
-                // Write the host with open Telnet port to the log file
                 writeToLogFile("Ruffy found a weak ship: " + host);
             }
         } catch (Exception e) {
@@ -129,6 +126,7 @@ public class MonocularPeek {
     public static boolean isDeviceReachable(String host, int port, int timeout) {
         try (Socket socket = new Socket()) {
             socket.connect(new java.net.InetSocketAddress(host, port), timeout);
+            socket.close();
             return true;
         } catch (IOException e) {
             return false;
@@ -138,6 +136,7 @@ public class MonocularPeek {
     public static boolean isPortOpen(String host, int port, int timeout) {
         try (Socket socket = new Socket()) {
             socket.connect(new java.net.InetSocketAddress(host, port), timeout);
+            socket.close();
             return true;
         } catch (IOException e) {
             return false;
@@ -160,56 +159,30 @@ public class MonocularPeek {
                 (ip & 0xFF);
     }
 
-    public void printResults() {
-        System.out.println("Active devices:");
-        for (String device : activeShips.keySet()) {
-            System.out.println(device);
-        }
+    private synchronized void updateLastScannedIp(String ip) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
+            StringBuilder content = new StringBuilder();
+            String line;
 
-        System.out.println("Devices with open Telnet ports:");
-        for (String device : telnetShips.keySet()) {
-            System.out.println(device);
-        }
-    }
-
-    public Map<String, Boolean> getActiveShips() {
-        return activeShips;
-    }
-
-    public Map<String, Boolean> getTelnetShips() {
-        return telnetShips;
-    }
-
-    private void updateLastScannedIp(String ip) {
-        synchronized (logFileLock) {
-            try {
-                BufferedReader reader = new BufferedReader(new FileReader(logFile));
-                StringBuilder content = new StringBuilder();
-                String line;
-
-                while ((line = reader.readLine()) != null) {
-                    if (!line.startsWith("Ruffys last checked coordinates:")) {
-                        content.append(line).append("\n");
-                    }
+            while ((line = reader.readLine()) != null) {
+                if (!line.startsWith("Ruffys last checked coordinates:")) {
+                    content.append(line).append("\n");
                 }
-                reader.close();
-
-                FileWriter writer = new FileWriter(logFile);
-                writer.write("Ruffys last checked coordinates: " + ip + "\n" + content);
-                writer.close();
-            } catch (IOException e) {
-                e.printStackTrace();
             }
+            reader.close();
+            try (FileWriter writer = new FileWriter(logFile)) {
+                writer.write("Ruffys last checked coordinates: " + ip + "\n" + content);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
-    private void writeToLogFile(String message) {
-        synchronized (logFileLock) {
-            try (FileWriter writer = new FileWriter(logFile, true)) {
-                writer.write(message + "\n");
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+    private synchronized void writeToLogFile(String message) {
+        try (FileWriter writer = new FileWriter(logFile, true)) {
+            writer.write(message + "\n");
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -222,6 +195,7 @@ public class MonocularPeek {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (line.startsWith("Ruffys last checked coordinates:")) {
+                    reader.close();
                     return line.split(": ")[1];
                 }
             }

@@ -16,13 +16,10 @@ public class Main {
         System.out.println("----------Started to sail hihihihihihihi---------------");
         System.out.println("-------------------------------------------------------");
 
-        // Instantiate ruffy the pirate
         MonocularPeek ruffy = new MonocularPeek();
-        // Get the last scanned IP
         String lastScannedIp = ruffy.getLastScannedIp();
         String startIp = (lastScannedIp != null) ? lastScannedIp : "103.107.180.216";
 
-        // Let ruffy scout for enemy ships
-        ruffy.discoverShips(startIp, "172.255.255.255");
+        ruffy.discoverShips(startIp, "172.255.255.255", 8);
     }
 }
