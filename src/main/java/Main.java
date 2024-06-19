@@ -20,13 +20,9 @@ public class Main {
         MonocularPeek ruffy = new MonocularPeek();
         // Get the last scanned IP
         String lastScannedIp = ruffy.getLastScannedIp();
-        String startIp = (lastScannedIp != null) ? lastScannedIp : "103.101.16.117";
+        String startIp = (lastScannedIp != null) ? lastScannedIp : "103.107.180.216";
 
         // Let ruffy scout for enemy ships
         ruffy.discoverShips(startIp, "172.255.255.255");
-
-
-        //TO-DO: Es muss bei start nicht nur die alte zuletzt geprüfte immer angepasst werden,
-        // sondern auch noch die alten gefunden mit offenem port 23 wieder übernommen werden
     }
 }

@@ -5,13 +5,18 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.HashSet;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class MonocularPeek {
 
-    private final HashSet<String> activeShips = new HashSet<>();
-    private final HashSet<String> telnetShips = new HashSet<>();
-    private final HashSet<String> weakShips = new HashSet<>();
+    private final Map<String, Boolean> activeShips = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> telnetShips = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> weakShips = new ConcurrentHashMap<>();
+    private final Object logFileLock = new Object(); // Lock object for synchronizing log file operations
     private File logFile;
 
     public MonocularPeek() {
@@ -59,45 +64,65 @@ public class MonocularPeek {
     }
 
     public void discoverShips(String startIp, String endIp) {
+        int numThreads = 16;  // Anzahl der Threads (kann an die verfügbare Hardware angepasst werden)
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+
         try {
             long start = ipToLong(InetAddress.getByName(startIp));
             long end = ipToLong(InetAddress.getByName(endIp));
 
             for (long ip = start; ip <= end; ip++) {
-                String host = longToIp(ip);
-                System.out.println("Checking ship with " + host + " for weaknesses...");
+                final long currentIp = ip;
+                executor.submit(() -> {
+                    String host = longToIp(currentIp);
+                    System.out.println("Checking ship with " + host + " for weaknesses...");
 
-                if (InetAddress.getByName(host).isLoopbackAddress()) {
-                    System.out.println("Loopback address, skipping...");
-                    continue;
-                }
-
-                if (isDeviceReachable(host, 80, 12000)) { // Port 80 for TCP, timeout of 12 seconds
-                    activeShips.add(host);
-                    System.out.println("Found ship: " + host);
-                    System.out.println("Checking if ship " + host + " is weak enough...");
-                    scanTelnetPorts(host, 12000); // Timeout of 12 seconds for Telnet port scan
-                }
-
-                // Update the last scanned IP in the log file
-                updateLastScannedIp(host);
+                    try {
+                        if (InetAddress.getByName(host).isLoopbackAddress()) {
+                            System.out.println("Loopback address, skipping...");
+                            return;
+                        }
+                        if (isDeviceReachable(host, 80, 5000)) { // Port 80 for TCP, timeout of 5 seconds
+                            activeShips.put(host, true);
+                            System.out.println("Found ship: " + host);
+                            System.out.println("Checking if ship " + host + " is weak enough...");
+                            scanTelnetPorts(host, 5000); // Timeout of 5 seconds for Telnet port scan
+                        }
+                        updateLastScannedIp(host);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
             }
-        } catch (IOException e) {
+
+            executor.shutdown();
+            if (!executor.awaitTermination(1, TimeUnit.HOURS)) {
+                executor.shutdownNow();
+            }
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         }
     }
 
     public void scanTelnetPorts(String host, int timeout) {
-        if (!isPortOpen(host, 23, timeout) && !isPortOpen(host, 2323, timeout)) {
-            activeShips.remove(host);
-            System.out.println("Ship : " + host + " is too strong");
-        } else {
-            telnetShips.add(host);
-            System.out.println("Ship: " + host + " is ready to get rämsed");
-            weakShips.add(host);
+        try {
+            if (!isPortOpen(host, 23, timeout) && !isPortOpen(host, 2323, timeout)) {
+                activeShips.remove(host);
+                System.out.println("Ship : " + host + " is too strong");
+            } else {
+                telnetShips.put(host, true);
+                System.out.println("-----------------------------------------");
+                System.out.println("-----------------------------------------");
+                System.out.println("Ship: " + host + " is ready to get rämsed");
+                System.out.println("-----------------------------------------");
+                System.out.println("-----------------------------------------");
+                weakShips.put(host, true);
 
-            // Write the host with open Telnet port to the log file
-            writeToLogFile("Device with open Telnet port: " + host);
+                // Write the host with open Telnet port to the log file
+                writeToLogFile("Ruffy found a weak ship: " + host);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -137,50 +162,54 @@ public class MonocularPeek {
 
     public void printResults() {
         System.out.println("Active devices:");
-        for (String device : activeShips) {
+        for (String device : activeShips.keySet()) {
             System.out.println(device);
         }
 
         System.out.println("Devices with open Telnet ports:");
-        for (String device : telnetShips) {
+        for (String device : telnetShips.keySet()) {
             System.out.println(device);
         }
     }
 
-    public HashSet<String> getActiveShips() {
+    public Map<String, Boolean> getActiveShips() {
         return activeShips;
     }
 
-    public HashSet<String> getTelnetShips() {
+    public Map<String, Boolean> getTelnetShips() {
         return telnetShips;
     }
 
     private void updateLastScannedIp(String ip) {
-        try {
-            BufferedReader reader = new BufferedReader(new FileReader(logFile));
-            StringBuilder content = new StringBuilder();
-            String line;
+        synchronized (logFileLock) {
+            try {
+                BufferedReader reader = new BufferedReader(new FileReader(logFile));
+                StringBuilder content = new StringBuilder();
+                String line;
 
-            while ((line = reader.readLine()) != null) {
-                if (!line.startsWith("Zuletzt geprüfte IP:")) {
-                    content.append(line).append("\n");
+                while ((line = reader.readLine()) != null) {
+                    if (!line.startsWith("Ruffys last checked coordinates:")) {
+                        content.append(line).append("\n");
+                    }
                 }
-            }
-            reader.close();
+                reader.close();
 
-            FileWriter writer = new FileWriter(logFile);
-            writer.write("Zuletzt geprüfte IP: " + ip + "\n" + content);
-            writer.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+                FileWriter writer = new FileWriter(logFile);
+                writer.write("Ruffys last checked coordinates: " + ip + "\n" + content);
+                writer.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
     private void writeToLogFile(String message) {
-        try (FileWriter writer = new FileWriter(logFile, true)) {
-            writer.write(message + "\n");
-        } catch (IOException e) {
-            e.printStackTrace();
+        synchronized (logFileLock) {
+            try (FileWriter writer = new FileWriter(logFile, true)) {
+                writer.write(message + "\n");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -192,7 +221,7 @@ public class MonocularPeek {
         try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                if (line.startsWith("Zuletzt geprüfte IP:")) {
+                if (line.startsWith("Ruffys last checked coordinates:")) {
                     return line.split(": ")[1];
                 }
             }
