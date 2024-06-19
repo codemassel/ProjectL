@@ -48,10 +48,14 @@ public class MonocularPeek {
 
     private void recruitScouter(int counter){
         for(int i = 0; i < counter; i++) {
+            int threadNumber = i;
             ScouterList.add(new Thread() {
                 public void run() {
+                    long currentLocalIp = CurrentIP + threadNumber;
                     while(true) {
-                        discoverShips(CurrentIP, EndRange);
+                        discoverShips(currentLocalIp, EndRange);
+                        updateIP(longToIp(currentLocalIp));
+                        currentLocalIp += AmountOfScouter;
                     }
                 }
             });
@@ -68,7 +72,7 @@ public class MonocularPeek {
 
 
     private void discoverShips(long startIp, long endIp) {
-        String host = longToIp(CurrentIP);
+        String host = longToIp(startIp);
         System.out.println("Checking ship with " + host + " for weaknesses...");
 
         try {
@@ -81,8 +85,6 @@ public class MonocularPeek {
                 System.out.println("Checking if ship " + host + " is weak enough...");
                 scanTelnetPorts(host, 5000);
             }
-            CurrentIP += 1;
-            updateIP(longToIp(CurrentIP));
         } catch (IOException e) {
             e.printStackTrace();
         }
