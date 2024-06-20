@@ -1,61 +1,55 @@
 package sniff;
 
 import java.io.*;
-import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 public class MonocularPeek {
 
     public static final String LAST_CHECKED_COORINATE = "CurrentIp.txt";
     public static final String LIST_OF_WEAK_SHIPS = "WeakShips.txt";
-    public static long CurrentIP;
+    public static long currentIP;
     private final Map<String, Boolean> ActiveShips = new ConcurrentHashMap<>();
-    private List<Thread> ScouterList = new ArrayList<Thread>();
+    private List<Thread> scouterList = new ArrayList<Thread>();
     private long StartRange;
-    private long EndRange;
-    private int AmountOfScouter;
+    private long endrange;
+    private int amountOfScouter;
 
     public MonocularPeek(String startRange, String endRange, int amountOfScouter) throws UnknownHostException {
         createFileIfNotExists(LAST_CHECKED_COORINATE);
         createFileIfNotExists(LIST_OF_WEAK_SHIPS);
         this.StartRange = ipToLong(InetAddress.getByName(startRange));
-        this.EndRange = ipToLong(InetAddress.getByName(endRange));;
-        this.AmountOfScouter = amountOfScouter;
-        CurrentIP = this.StartRange;
-        recruitScouter(this.AmountOfScouter);
+        this.endrange = ipToLong(InetAddress.getByName(endRange));;
+        this.amountOfScouter = amountOfScouter;
+        currentIP = this.StartRange;
+        recruitScouter(this.amountOfScouter);
     }
 
     public MonocularPeek(String endRange, int amountOfScouter) throws UnknownHostException {
         createFileIfNotExists(LAST_CHECKED_COORINATE);
         createFileIfNotExists(LIST_OF_WEAK_SHIPS);
         this.StartRange = ipToLong(InetAddress.getByName(getCurrentIpFromFile()));
-        this.EndRange = ipToLong(InetAddress.getByName(endRange));;
-        this.AmountOfScouter = amountOfScouter;
-        CurrentIP = this.StartRange;
-        recruitScouter(this.AmountOfScouter);
+        this.endrange = ipToLong(InetAddress.getByName(endRange));;
+        this.amountOfScouter = amountOfScouter;
+        currentIP = this.StartRange;
+        recruitScouter(this.amountOfScouter);
     }
 
     private void recruitScouter(int counter){
         for(int i = 0; i < counter; i++) {
             int threadNumber = i;
-            ScouterList.add(new Thread() {
+            scouterList.add(new Thread() {
                 public void run() {
-                    long currentLocalIp = CurrentIP + threadNumber;
+                    long currentLocalIp = currentIP + threadNumber;
                     while(true) {
-                        discoverShips(currentLocalIp, EndRange);
+                        discoverShips(currentLocalIp, endrange);
                         updateIP(longToIp(currentLocalIp));
-                        currentLocalIp += AmountOfScouter;
+                        currentLocalIp += amountOfScouter;
                     }
                 }
             });
@@ -64,7 +58,7 @@ public class MonocularPeek {
     }
 
     private void startScouting(){
-        for(Thread scouter : ScouterList){
+        for(Thread scouter : scouterList){
             scouter.start();
         }
     }
@@ -92,7 +86,7 @@ public class MonocularPeek {
 
     private void scanTelnetPorts(String host, int timeout) {
         try {
-            if (!isPortOpen(host, 23, timeout) && !isPortOpen(host, 2323, timeout)) {
+            if (!isPortOpen(host, timeout)) {
                 ActiveShips.remove(host);
                 System.out.println("Ship : " + host + " is too strong");
             } else {
@@ -101,7 +95,7 @@ public class MonocularPeek {
                 System.out.println("Ship: " + host + " is ready to get rämsed");
                 System.out.println("-----------------------------------------");
                 System.out.println("-----------------------------------------");
-                addIPAddress(host);
+                //addIPAddress(host);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -118,14 +112,39 @@ public class MonocularPeek {
         }
     }
 
-    private boolean isPortOpen(String host, int port, int timeout) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new java.net.InetSocketAddress(host, port), timeout);
-            socket.close();
-            return true;
-        } catch (IOException e) {
+    public boolean isPortOpen(String host, int timeout) {
+        if (!isDeviceReachable(host,23, timeout)) {
             return false;
         }
+
+        try (Socket telnetSocket = new Socket()) {
+            telnetSocket.connect(new java.net.InetSocketAddress(host, 23), timeout);
+
+            OutputStream out = telnetSocket.getOutputStream();
+            InputStream in = telnetSocket.getInputStream();
+
+            out.write("hello\n".getBytes());
+            out.flush();
+
+            Thread.sleep(timeout);
+
+            if (in.available() > 0) {
+                byte[] buffer = new byte[1024];
+                int bytesRead = in.read(buffer);
+                if (bytesRead > 0) {
+                    String response = new String(buffer, 0, bytesRead);
+                    System.out.println("Received: " + response);
+                    addIPAddress(host, response);
+                    return true;
+                }
+            }
+
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        return false;
     }
 
     private long ipToLong(InetAddress ip) {
@@ -187,9 +206,9 @@ public class MonocularPeek {
     }
 
     // Methode zum Hinzufügen einer neuen IP-Adresse zur Datei
-    private void addIPAddress(String ipAddress) {
+    private void addIPAddress(String ipAddress, String response) {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(LIST_OF_WEAK_SHIPS, true))) {
-            writer.write(ipAddress);
+            writer.write(ipAddress + ", Response: " + response);
             writer.newLine();
             System.out.println("IP-Adresse wurde zur Datei " + LIST_OF_WEAK_SHIPS + " hinzugefügt.");
         } catch (IOException e) {
