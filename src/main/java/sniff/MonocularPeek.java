@@ -14,12 +14,10 @@ public class MonocularPeek {
     private final Map<String, Boolean> activeShips = new ConcurrentHashMap<>();
     private final File scannedLogFile;
     private final File foundLogFile;
-    private final File lastScannedIpFile;
 
     public MonocularPeek() {
         scannedLogFile = createLogFile("scanned");
         foundLogFile = createLogFile("found");
-        lastScannedIpFile = new File("lastScannedIp.txt");
     }
 
     private File createLogFile(String type) {
@@ -41,7 +39,7 @@ public class MonocularPeek {
     }
 
     public void discoverShips(String startIp, String endIp, int numThreads) {
-        String lastScannedIp = getLastScannedIp();
+
         long startIpLong;
         long endIpLong;
         try {
@@ -100,11 +98,10 @@ public class MonocularPeek {
     }
 
     public void scanTelnetPorts(String host, int timeout) {
-        boolean port23Open = isPortOpen(host, 23, timeout);
-        boolean port2323Open = isPortOpen(host, 2323, timeout);
+        boolean port23Open = isPortOpen(host, timeout);
 
         synchronized (activeShips) {
-            if (!port23Open && !port2323Open) {
+            if (!port23Open) {
                 activeShips.remove(host);
                 System.out.println("Ship : " + host + " is too strong");
             } else {
@@ -127,13 +124,43 @@ public class MonocularPeek {
         }
     }
 
-    public static boolean isPortOpen(String host, int port, int timeout) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new java.net.InetSocketAddress(host, port), timeout);
-            return true;
-        } catch (IOException e) {
+    public static boolean isPortOpen(String host, int timeout) {
+        if (!isDeviceReachable(host, 23, timeout)) {
             return false;
         }
+
+        try (Socket telnetSocket = new Socket()) {
+            telnetSocket.connect(new java.net.InetSocketAddress(host, 23), timeout);
+
+            // sends data
+            OutputStream out = telnetSocket.getOutputStream();
+            // gets data
+            InputStream in = telnetSocket.getInputStream();
+
+            //send simple telnet request
+            out.write("hello\n".getBytes());
+            out.flush();
+
+            // wait 1sec
+            Thread.sleep(timeout);
+
+            // checks if data is found
+            if (in.available() > 0) {
+                byte[] buffer = new byte[1024];
+                int bytesRead = in.read(buffer);
+                if (bytesRead > 0) {
+                    String response = new String(buffer, 0, bytesRead);
+                    System.out.println("Received: " + response);
+                    return true;
+                }
+            }
+
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        return false;
     }
 
     public static long ipToLong(InetAddress ip) {
@@ -165,23 +192,30 @@ public class MonocularPeek {
     }
 
     public synchronized String getLastScannedIp() {
-        if (!lastScannedIpFile.exists()) {
+        File logDir = new File("logs/scanned");
+        File[] logFiles = logDir.listFiles((dir, name) -> name.startsWith("PirateAdventures_scanned_"));
+        if (logFiles == null || logFiles.length < 1) {
             return null;
         }
+        File latestChangedLogFile = logFiles[0];
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(lastScannedIpFile))) {
-            return reader.readLine();
-        } catch (IOException e) {
-            e.printStackTrace();
+        for (File logFile : logFiles) {
+            if (latestChangedLogFile.lastModified() < logFile.lastModified()) {
+                latestChangedLogFile = logFile;
+            }
         }
-        return null;
-    }
 
-    private synchronized void updateLastScannedIp(String ip) {
-        try (FileWriter writer = new FileWriter(lastScannedIpFile)) {
-            writer.write(ip);
+        try (BufferedReader reader = new BufferedReader(new FileReader(latestChangedLogFile))) {
+            String line;
+            String lastLine = null;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("Scanned IP: ")) {
+                    lastLine = line.substring("Scanned IP: ".length()).trim();
+                }
+            }
+            return lastLine;
         } catch (IOException e) {
-            e.printStackTrace();
+            throw new RuntimeException(e);
         }
     }
 }

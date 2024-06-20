@@ -17,10 +17,17 @@ public class Main {
         System.out.println("-------------------------------------------------------");
 
         MonocularPeek monocularPeek = new MonocularPeek();
-        String startIp = "103.107.181.36";
-        String endIp = "103.255.181.45";
-        int numThreads = 2000;
+        String startIp = "103.107.182.1";
+        String endIp = "172.15.255.255";
+        int numThreads = 64;
 
-        monocularPeek.discoverShips(startIp, endIp, numThreads);
+        String lastScannedIp = monocularPeek.getLastScannedIp();
+        System.out.println("1. lastscanned "+ lastScannedIp);
+        if (lastScannedIp == null) {
+            lastScannedIp = startIp;
+        }
+        System.out.println("Starting discovery from IP: " + lastScannedIp);
+
+        monocularPeek.discoverShips(lastScannedIp, endIp, numThreads);
     }
 }
