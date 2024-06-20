@@ -10,7 +10,6 @@
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
-      <module name="network-scanner" target="11" />
       <module name="ProjectL" target="11" />
     </bytecodeTargetLevel>
   </component>
