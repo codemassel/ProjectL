@@ -14,29 +14,31 @@ public class MonocularPeek {
     public static final String LAST_CHECKED_COORINATE = "CurrentIp.txt";
     public static final String LIST_OF_WEAK_SHIPS = "WeakShips.txt";
     public static long currentIP;
-    private final Map<String, Boolean> ActiveShips = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> activeShips = new ConcurrentHashMap<>();
     private List<Thread> scouterList = new ArrayList<Thread>();
-    private long StartRange;
+    private long startRange;
     private long endrange;
     private int amountOfScouter;
+    private Blacklist blacklist = new Blacklist();
 
-    public MonocularPeek(String startRange, String endRange, int amountOfScouter) throws UnknownHostException {
+    public MonocularPeek(String startRange, String endRange, int amountOfScouter, Blacklist blacklist) throws UnknownHostException {
         createFileIfNotExists(LAST_CHECKED_COORINATE);
         createFileIfNotExists(LIST_OF_WEAK_SHIPS);
-        this.StartRange = ipToLong(InetAddress.getByName(startRange));
+        this.startRange = ipToLong(InetAddress.getByName(startRange));
         this.endrange = ipToLong(InetAddress.getByName(endRange));;
         this.amountOfScouter = amountOfScouter;
-        currentIP = this.StartRange;
+        this.blacklist = blacklist;
+        currentIP = this.startRange;
         recruitScouter(this.amountOfScouter);
     }
 
     public MonocularPeek(String endRange, int amountOfScouter) throws UnknownHostException {
         createFileIfNotExists(LAST_CHECKED_COORINATE);
         createFileIfNotExists(LIST_OF_WEAK_SHIPS);
-        this.StartRange = ipToLong(InetAddress.getByName(getCurrentIpFromFile()));
+        this.startRange = ipToLong(InetAddress.getByName(getCurrentIpFromFile()));
         this.endrange = ipToLong(InetAddress.getByName(endRange));;
         this.amountOfScouter = amountOfScouter;
-        currentIP = this.StartRange;
+        currentIP = this.startRange;
         recruitScouter(this.amountOfScouter);
     }
 
@@ -64,63 +66,17 @@ public class MonocularPeek {
     }
 
     private void discoverShips(long startIp, long endIp) {
-        while (startIp <= endIp) {
-            String host = longToIp(startIp);
-            System.out.println("Checking ship with " + host + " for weaknesses...");
-            String[] dodList = {"6.", "7.", "11.", "21.", "22.", "26.", "28.", "29.", "30.", "33.", "55.", "214.", "215."};
+        String host = longToIp(startIp);
+        System.out.println("Checking ship with " + host + " for weaknesses...");
+        blacklist.checkIfEnemyIsOnBlacklist(host, startIp, endIp);
 
-            try {
-                if (InetAddress.getByName(host).isLoopbackAddress()) {
-                    System.out.println("Loopback address, skipping...");
-                    return;
-                } else if (host.startsWith("0.")) {
-                    System.out.println("Invalid address space, skipping...");
-                    return;
-                } else if (host.startsWith("3.")) {
-                    System.out.println("General Electric Company, skipping...");
-                    return;
-                } else if (host.startsWith("15.") || host.startsWith("16.")) {
-                    System.out.println("Hewlett-Packard Company, skipping...");
-                    return;
-                } else if (host.startsWith("56.")) {
-                    System.out.println("US Postal Service, skipping...");
-                    return;
-                } else if (host.startsWith("10.") || host.startsWith("192.168.")) {
-                    System.out.println("internal networks, skipping...");
-                    return;
-                } else if ((host.startsWith("172.") && isInRange(host, "172.16.0.0", "172.31.255.255"))) {
-                    System.out.println("internal networks, skipping...");
-                    return;
-                } else if ((host.startsWith("100.") && isInRange(host, "100.64.0.0", "100.127.255.255"))) {
-                    System.out.println("IANA NAT, skipping...");
-                    return;
-                } else if ((host.startsWith("169.") && isInRange(host, "169.254.0.0", "169.254.255.255"))) {
-                    System.out.println("IANA NAT, skipping...");
-                    return;
-                } else if ((host.startsWith("198.") && isInRange(host, "198.18.0.0", "198.19.255.255"))) {
-                    System.out.println("IANA Special use, skipping...");
-                    return;
-                } else {
-                    for (String dodIp : dodList) {
-                        if (host.startsWith(dodIp)) {
-                            System.out.println("Department of Defense, skipping...");
-                            return;
-                        }
-                    }
-                }
-
-                if (isDeviceReachable(host, 80, 5000)) {
-                    System.out.println("Found ship: " + host);
-                    System.out.println("Checking if ship " + host + " is weak enough...");
-                    scanTelnetPorts(host, 10000);
-                    //}
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+        //TODO: ggf. if-statement auskommentieren und nur scanTelnetPorts ausführen
+        if (isDeviceReachable(host, 80, 5000)) {
+            System.out.println("Found ship: " + host);
+            System.out.println("Checking if ship " + host + " is weak enough...");
+            scanTelnetPorts(host, 10000);
         }
     }
-
     private void scanTelnetPorts(String host, int timeout) {
         try {
             if (!isPortOpen(host, timeout)) {
@@ -180,7 +136,6 @@ public class MonocularPeek {
             e.printStackTrace();
             return false;
         }
-
         return false;
     }
     /* test method for scouter attacking a ship
@@ -210,7 +165,7 @@ public class MonocularPeek {
             System.out.println(new String(buffer));
      */
 
-    private long ipToLong(InetAddress ip) {
+    protected long ipToLong(InetAddress ip) {
         byte[] octets = ip.getAddress();
         long result = 0;
         for (byte octet : octets) {
@@ -219,7 +174,7 @@ public class MonocularPeek {
         return result;
     }
 
-    private String longToIp(long ip) {
+    protected String longToIp(long ip) {
         return ((ip >> 24) & 0xFF) + "." +
                 ((ip >> 16) & 0xFF) + "." +
                 ((ip >> 8) & 0xFF) + "." +
@@ -259,7 +214,7 @@ public class MonocularPeek {
         }
         return null;
     }
-
+    //TODO update ip if last_checked_COORDINATE is in blacklist & skip unnecessary blacklisted ips (127.0.0.1 --> 127.255.255.255)
     private void updateIP(String newIP) {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(LAST_CHECKED_COORINATE))) {
             writer.write(newIP);
@@ -277,17 +232,4 @@ public class MonocularPeek {
             System.out.println("Fehler beim Hinzufügen zur Datei " + LIST_OF_WEAK_SHIPS + ": " + e.getMessage());
         }
     }
-    //method that checks if ship is in a range of coordinates
-    private boolean isInRange(String ipAddress, String startRange, String endRange) throws UnknownHostException {
-        InetAddress start = InetAddress.getByName(startRange);
-        InetAddress end = InetAddress.getByName(endRange);
-        InetAddress ip = InetAddress.getByName(ipAddress);
-
-        long startLong = ipToLong(start);
-        long endLong = ipToLong(end);
-        long ipLong = ipToLong(ip);
-
-        return (ipLong >= startLong && ipLong <= endLong);
-    }
-
 }
