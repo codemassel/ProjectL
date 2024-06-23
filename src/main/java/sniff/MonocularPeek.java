@@ -4,6 +4,7 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -67,28 +68,30 @@ public class MonocularPeek {
 
     private void discoverShips(long startIp, long endIp) {
         String host = longToIp(startIp);
-        System.out.println("Checking ship with " + host + " for weaknesses...");
+        if (host.endsWith(".0.0")) {
+            System.out.println("Ruffy lets his scouters scan the following coordinates: " + host);
+        }
+        //System.out.println("Checking ship with " + host + " for weaknesses...");
         blacklist.checkIfEnemyIsOnBlacklist(host, startIp, endIp);
 
         //TODO: ggf. if-statement auskommentieren und nur scanTelnetPorts ausführen
-        if (isDeviceReachable(host, 80, 5000)) {
+        scanTelnetPorts(host, 15000);
+        /*if (isDeviceReachable(host, 80, 5000)) {
             System.out.println("Found ship: " + host);
             System.out.println("Checking if ship " + host + " is weak enough...");
             scanTelnetPorts(host, 10000);
+        //
         }
+         */
     }
     private void scanTelnetPorts(String host, int timeout) {
         try {
-            if (!isPortOpen(host, timeout)) {
-                //ActiveShips.remove(host);
-                System.out.println("Ship : " + host + " is too strong");
-            } else {
+            if (isPortOpen(host, timeout)) {
                 System.out.println("-----------------------------------------");
                 System.out.println("-----------------------------------------");
                 System.out.println("Ship: " + host + " is ready to get rämsed");
                 System.out.println("-----------------------------------------");
                 System.out.println("-----------------------------------------");
-                //addIPAddress(host);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -106,34 +109,42 @@ public class MonocularPeek {
     }
 
     public boolean isPortOpen(String host, int timeout) {
-        if (!isDeviceReachable(host,23, timeout)) {
+        /*if (!isDeviceReachable(host,23, timeout/2)) {
             return false;
         }
+
+         */
 
         try (Socket telnetSocket = new Socket()) {
             telnetSocket.connect(new java.net.InetSocketAddress(host, 23), timeout);
 
-            OutputStream out = telnetSocket.getOutputStream();
-            InputStream in = telnetSocket.getInputStream();
+            if (telnetSocket.isConnected()) {
+                OutputStream out = telnetSocket.getOutputStream();
+                InputStream in = telnetSocket.getInputStream();
 
-            out.write("hello\n".getBytes());
-            out.flush();
+                out.write("hello\n".getBytes());
+                out.flush();
 
-            Thread.sleep(timeout);
+                Thread.sleep(timeout);
 
-            if (in.available() > 0) {
-                byte[] buffer = new byte[1024];
-                int bytesRead = in.read(buffer);
-                if (bytesRead > 0) {
-                    String response = new String(buffer, 0, bytesRead);
-                    System.out.println("Received: " + response);
-                    addIPAddress(host, response);
-                    return true;
+                if (in.available() > 0) {
+                    byte[] buffer = new byte[1024];
+                    int bytesRead = in.read(buffer);
+                    if (bytesRead > 0) {
+                        String response = new String(buffer, 0, bytesRead);
+                        System.out.println("Received: " + response);
+                        addIPAddress(host, response);
+                        return true;
+                    }
                 }
             }
 
         } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
+            if (e instanceof java.net.SocketTimeoutException) {
+                //silently handle sockettimeout
+            } else {
+                e.printStackTrace();
+            }
             return false;
         }
         return false;
@@ -225,7 +236,8 @@ public class MonocularPeek {
 
     private void addIPAddress(String ipAddress, String response) {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(LIST_OF_WEAK_SHIPS, true))) {
-            writer.write(ipAddress + ", Response: " + response);
+            Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+            writer.write(ipAddress + timestamp + System.lineSeparator() + ", Response: " + response + System.lineSeparator());
             writer.newLine();
             System.out.println("IP-Adresse wurde zur Datei " + LIST_OF_WEAK_SHIPS + " hinzugefügt.");
         } catch (IOException e) {
