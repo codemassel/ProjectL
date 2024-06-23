@@ -19,6 +19,6 @@ public class Main {
         System.out.println("----------Started to sail hihihihihihihi---------------");
         System.out.println("-------------------------------------------------------");
 
-        MonocularPeek ruffy = new MonocularPeek("223.255.255.255", 6000); // 223.255.255.255 is last ip before multicast
+        MonocularPeek ruffy = new MonocularPeek("223.255.255.255", 5000); // 223.255.255.255 is last ip before multicast
     }
 }
