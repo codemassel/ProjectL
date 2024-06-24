@@ -71,7 +71,7 @@ public class MonocularPeek {
         if (host.endsWith(".0.0")) {
             System.out.println("Ruffy lets his scouters scan the following coordinates: " + host);
         }
-        //System.out.println("Checking ship with " + host + " for weaknesses...");
+        System.out.println("Checking ship with " + host + " for weaknesses...");
         blacklist.checkIfEnemyIsOnBlacklist(host, startIp, endIp);
 
         //TODO: ggf. if-statement auskommentieren und nur scanTelnetPorts ausführen
@@ -80,8 +80,8 @@ public class MonocularPeek {
             System.out.println("Found ship: " + host);
             System.out.println("Checking if ship " + host + " is weak enough...");
             scanTelnetPorts(host, 10000);
-        //
         }
+
          */
     }
     private void scanTelnetPorts(String host, int timeout) {
